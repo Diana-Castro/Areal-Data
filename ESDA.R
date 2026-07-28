@@ -39,10 +39,11 @@ nb_queen<- poly2nb(municipios, queen = TRUE)# Vecindario
 cat("Municipios sin vecinos:", sum(card(nb_queen) == 0), "\n")
 islas<- which(card(nb_queen) == 0)
 cat("Municipios isla:", islas, "\n")
+municipios$nombre_limpio[islas] #Correspondiente a la Isla de Arousa
 coords<-st_centroid(st_geometry(municipios_utm)) |> st_coordinates()
 
-# modificar para isla, manualmente, cambiar para hacer match automático
-# nb_queen[[312]]<-as.integer(c(258,311)) # Correspondiente a Cambados y Vilanova de Arousa
+
+# modificar para isla, manualmente, cambiar para hacer match automático 
 # 1.1.1 Asignar el vecino más cercano por distancia a cada isla
 nb_queen <- addlinks1(nb_queen,
                       from = islas,
@@ -68,6 +69,7 @@ Widw <- nb2listw(nb_knn5,
                  style ="W")  # estandarización por filas
 # 1.2.3 Verificar pesos
 print(Wq)
+summary(Wq)
 
 print(Widw)
 
@@ -77,6 +79,15 @@ par(mfrow= c(1, 2))
 plot(st_geometry(municipios_utm), border = "grey70",main ="Vecindad Queen")
 plot(nb_queen, coords,add =TRUE, col ="steelblue",lwd =0.4)
 
+# Vecinos de ese municipio (índices reales dentro del nb completo)
+vecinos_267 <- nb_queen[[267]]
+# Segmentos manuales municipio -> cada vecino
+for (v in vecinos_267) {
+  segments(coords[267, 1], coords[267, 2],
+           coords[v, 1], coords[v, 2],
+           col = "red", lwd = 2)
+}
+# resaltar A Estrada
 plot(st_geometry(municipios_utm), border ="grey70", main= "Vecindad KNN (k=5)")
 plot(nb_knn5, coords, add= TRUE, col= "tomato",lwd = 0.4)
 par(mfrow=c(1, 1))
@@ -112,8 +123,8 @@ library(ggplot2)
 
 p_no2<- ggplot(municipios) + geom_sf(aes(fill= no2_median), colour = "grey24", linewidth = 0.05) +
   scale_fill_gradient(low = paleta_continua_low, high = paleta_continua_high,
-                      name = "NO2 (µg/m3)") +
-  theme_minimal() + labs(title= "NO2 mediana (µg/m3)") +
+                      name = "NO2 (µg/m3)") + 
+  theme_minimal() + labs(title = "NO2 mediana (µg/m3)" ) +
   theme(axis.text = element_blank(), axis.title = element_blank(),
         panel.grid = element_blank())
 p_pm25<- ggplot(municipios) + geom_sf(aes(fill =pm25_median), colour = "grey24", linewidth = 0.05) +
@@ -129,11 +140,29 @@ p_renta<- ggplot(municipios) + geom_sf(aes(fill=renta.pc), colour = "grey24", li
   theme(axis.text = element_blank(), axis.title = element_blank(),
         panel.grid = element_blank())
 windows()
-
-(p_pm25|p_no2 | p_renta) +
+p_pm25 | p_no2 |p_renta +
   plot_annotation(
-    title = "Distribución espacial de contaminantes y renta en Galicia",
-    subtitle = "313 municipios"
+    title = "Distribución espacial de contaminantes y renta en Galicia", 
+  )
+
+# Boxplots
+
+bp_pm25<- ggplot(municipios, aes(x = "", y = pm25_median)) +
+  geom_boxplot(fill = paleta_continua_high, color = "grey30") +
+  labs(title = "Boxplot de PM2.5 mediana", y = "PM2.5 (µg/m3)", x = "") +
+  theme_minimal()
+bp_no2<- ggplot(municipios, aes(x = "", y = no2_median)) +
+  geom_boxplot(fill = paleta_continua_high, color = "grey30") +
+  labs(title = "Boxplot de NO2 mediana", y = "NO2 (µg/m3)", x = "") +
+  theme_minimal()
+bp_renta<- ggplot(municipios, aes(x = "", y = renta.pc)) +
+  geom_boxplot(fill = paleta_continua_high, color = "grey30") +
+  labs(title = "Boxplot de Renta bruta per cápita", y = "Renta (miles €/cápita)", x = "") +
+  theme_minimal()
+windows()
+bp_pm25 | bp_no2 | bp_renta +
+  plot_annotation(
+    title = "Boxplots de contaminantes y renta en Galicia",
   )
 
 # 2.2 Autocorrelación espacial global: Índice I de Moran
@@ -165,22 +194,23 @@ moran_renta_perm <- moran.mc(municipios$renta_log,
 # Resultados
 cat("\n--- Índice de Moran global (Queen, estand. filas) ---\n")
 cat(sprintf("PM2.5: I = %.4f, p-valor= %.4f\n",
-            moran_pm25$estimate[1], moran_pm25$p.value))
+            moran_pm25$estimate[1], moran_pm25_perm$p.value))
 cat(sprintf("NO2: I = %.4f, p-valor= %.4f\n",
-            moran_no2$estimate[1],  moran_no2$p.value))
+            moran_no2$estimate[1],  moran_no2_perm$p.value))
 cat(sprintf("Log-renta: I = %.4f, p-valor= %.4f\n",
-            moran_renta$estimate[1], moran_renta$p.value))
+            moran_renta$estimate[1], moran_renta_perm$p.value))
 # Para todas las variables se rechaza la hipótesis nula de no autocorrelación espacial, 
 # indicando que hay una estructura espacial global significativa.
 
 # 2.3 Diagrama de dispersión de Moran Global
 windows()
-par(mfrow=c(1, 3))
+par(mfrow= c(1, 2))
+
 # PM2.5
 moran.plot(scale(municipios$pm25_median, scale=FALSE)[,1], #Evitar escalar, solo centrar para diagrama de Moran
            listw = Wq,
            labels= municipios$name,
-           xlab= "PM2.5 (estandarizado)",
+           xlab= "PM2.5 (centrado)",
            ylab="Retardo espacial de PM2.5",
            main="Diagrama de dispersión de Moran — PM2.5")
 # NO2
@@ -188,14 +218,14 @@ moran.plot(scale(municipios$pm25_median, scale=FALSE)[,1], #Evitar escalar, solo
 moran.plot(scale(municipios$no2_median, scale=FALSE)[,1],
            listw = Wq,
            labels= municipios$name,
-           xlab= "NO2 (estandarizado)",
+           xlab= "NO2 (centrado)",
            ylab= "Retardo espacial de NO2",
            main="Diagrama de dispersión de Moran — NO2")
 # Renta
 moran.plot(scale(municipios$renta_log, scale=FALSE)[,1],
            listw = Wq,
            labels= municipios$name,
-           xlab="Log-renta (estandarizado)",
+           xlab="Log-renta (centrado)",
            ylab= "Retardo espacial de log-renta",
            main= "Diagrama de dispersión de Moran — Log-renta")
 
@@ -207,11 +237,11 @@ head(locm_pm25) # dist.normal
 locm_pm25_perm<-localmoran_perm(x=municipios$pm25_median, listw = Wq, nsim=999)
 head(locm_pm25_perm) # dist. de permuaciones
 # NO2
-locm_no2<-localmoran(x=municipios$no2_median, list= Wq)
+locm_no2<-localmoran(x=municipios$no2_median, listw = Wq)
 locm_no2_perm<-localmoran_perm(x=municipios$no2_median, listw = Wq, nsim=999)
 # Renta
 locm_renta<-localmoran(x=municipios$renta_log, listw =Wq)
-locm_renta_perm<-localmoran_perm(x=municipios$renta_log, list=Wq, nsim=999)
+locm_renta_perm<-localmoran_perm(x=municipios$renta_log, listw=Wq, nsim=999)
 # --2.4.1 Agregar el índice de Moran local al objeto municipios
 municipios$I_localpm25 <- locm_pm25[,"Ii"]
 #summary(locm_pm25[,"Ii"])
@@ -401,7 +431,7 @@ p_lisasig_pm25 | p_lisasig_no2 | p_lisasig_renta +
 (tabla_lisa_pm25 <- table(municipios$LISA_PM25_SIG))
 (tabla_lisa_no2 <- table(municipios$LISA_NO2_SIG))
 (tabla_lisa_renta <- table(municipios$LISA_RENTA_SIG))
-
+which(municipios$LISA_RENTA_SIG=="Alto-Bajo")
 
 #########################################################
 # 3.5 BiLISA
@@ -478,6 +508,28 @@ municipios <- municipios |>
 
 niveles_bilisa <- c("Alto-Alto","Bajo-Bajo", "Alto-Bajo", "Bajo-Alto", "No significativo")
 
+# Tabla de frecuencias
+(tabla_bilisa_pm25 <- table(municipios$bilisa_pm25_quad))
+(tabla_bilisa_no2 <- table(municipios$bilisa_no2_quad))
+which(municipios$bilisa_pm25_quad=="Alto-Bajo")
+
+# Tabla municipios BiLISA Alto-Bajo 
+tabla_bilisa_ab <- municipios |>
+  st_drop_geometry() |>
+  filter(bilisa_pm25_quad == "Alto-Bajo" | bilisa_no2_quad == "Alto-Bajo") |>
+  transmute(
+    Municipio = name,
+    Provincia = ine.prov.name,  
+    PM2.5_AltoBajo = bilisa_pm25_quad == "Alto-Bajo",
+    NO2_AltoBajo   = bilisa_no2_quad == "Alto-Bajo"
+  )
+print(tabla_bilisa_ab)
+
+
+# Exportar directamente a LaTeX
+#library(xtable)
+#print(xtable(tabla_bilisa_ab, caption = "Municipios en el cuadrante BiLISA Alto-Bajo"),
+#      include.rownames = FALSE)
 # Mapa PM2.5
 p_bilisa_pm25 <- ggplot(municipios) +
   geom_sf(aes(fill = factor(bilisa_pm25_quad, levels = niveles_bilisa)),
@@ -505,6 +557,7 @@ p_bilisa_no2 <- ggplot(municipios) +
 windows()
 p_bilisa_pm25 | p_bilisa_no2
 
+
 #########################################################
 
 
@@ -513,6 +566,9 @@ p_bilisa_pm25 | p_bilisa_no2
 library(GGally)
 windows()
 ggpairs(data=municipios, columns = c("pm25_median", "no2_median", "renta_log"))
+# Extraer la matriz de correlación numérica 
+cor(st_drop_geometry(municipios)[, c("pm25_median", "no2_median", "renta_log")],
+    use = "complete.obs")
 
 # 3.1 Modelos no espaciales (baseline)
 # Modelos lineales ordinarios: contaminantes en función de log-renta 
@@ -602,18 +658,51 @@ municipios$id <- 1:nrow(municipios)
 sp_pm25_inla <- inla(formula = pm25_median ~ renta_log + f(id, model = "besagproper", graph = W_inla),
                      data = st_drop_geometry(municipios),
                      family = "gaussian",
-                     control.compute = list(dic = TRUE, waic = TRUE),
+                     control.compute = list(dic = TRUE, waic = TRUE , return.marginals.predictor = TRUE),
                      control.predictor = list(compute = TRUE))
 summary(sp_pm25_inla)
-# disminuye el coeficiente de log-renta, de 1.153 a 0.136, pero sigue siendo significativo IC no incluye cero
+# disminuye el coeficiente de log-renta, de 1.153 a 0.136, pero sigue siendo significativo: IC no incluye cero
 # Modelo espacial para NO2
 sp_no2_inla <- inla(formula = no2_median ~ renta_log + f(id, model = "besagproper", graph = W_inla),
                     data = st_drop_geometry(municipios),
                     family = "gaussian",
-                    control.compute = list(dic = TRUE, waic = TRUE),
+                    control.compute = list(dic = TRUE, waic = TRUE, return.marginals.predictor = TRUE),
                     control.predictor = list(compute = TRUE))
 summary(sp_no2_inla)
 # coeficiente de log_renta=0.384, antes 2.884, caso similar a pm2.5, pero ahora intercept ya no es significativo
+
+# Proporción de varianza explicada por componente espacial (U+V) frente a la varianza total
+# con la proporción de varianza espacial estructurada (phi)
+# Nombres exactos de los hiperparámetros del modelo:
+names(sp_pm25_inla$marginals.hyperpar)
+
+cal_phi <- function(modelo_inla) {
+  marg_prec_U <- modelo_inla$marginals.hyperpar$`Precision for id`
+  marg_prec_V <- modelo_inla$marginals.hyperpar$`Precision for the Gaussian observations`
+  
+  var_U <- inla.emarginal(function(x) 1/x, marg_prec_U)
+  var_V <- inla.emarginal(function(x) 1/x, marg_prec_V)
+  phi   <- var_U / (var_U + var_V)
+  
+  # IC 95% de phi vía muestreo de las marginales
+  set.seed(semilla)
+  sim_prec_U <- inla.rmarginal(10000, marg_prec_U)
+  sim_prec_V <- inla.rmarginal(10000, marg_prec_V)
+  sim_phi <- (1/sim_prec_U) / (1/sim_prec_U + 1/sim_prec_V)
+  
+  list(var_U = var_U, var_V = var_V, phi = phi,
+       phi_ic = quantile(sim_phi, c(0.025, 0.975)))
+}
+
+phi_pm25 <- cal_phi(sp_pm25_inla)
+phi_no2  <- cal_phi(sp_no2_inla)
+
+
+cat(sprintf("PM2.5: phi = %.4f (IC95%%: %.4f, %.4f)\n",
+            phi_pm25$phi, phi_pm25$phi_ic[1], phi_pm25$phi_ic[2]))
+cat(sprintf("NO2  : phi = %.4f (IC95%%: %.4f, %.4f)\n",
+            phi_no2$phi, phi_no2$phi_ic[1], phi_no2$phi_ic[2]))
+
 
 # --3.2.3 Extracción de componentes
 # Componentes espaciales estructuradas (U)
@@ -685,10 +774,55 @@ moran.mc(x=municipios$v_no2, listw=Wq, alternative = "two.sided", nsim = 999)
 
 # Ambos contaminantes muestran disminución en correlación espacial y visualmente la componente no estructurada 
 # pierde patrón espacial, p-valor no significativo :. no se rechaza H0: no autocorrelación espacial, indicando que el modelo BYM ha capturado la dependencia espacial en los datos.
+  
+# --- 3.3. Análisis de sensibilidad de vecindario KNN (k=5) vs queen
+nb_knn5_sym <- make.sym.nb(nb_knn5) # es necesario simetrizar la matriz de pesos para INLA, por lo que se fuerza simetría
+Wknn_bin <- nb2listw(nb_knn5_sym, style = "B")
+W_knn_inla <- as(Wknn_bin, "CsparseMatrix")
 
+sp_pm25_knn <- inla(formula = pm25_median ~ renta_log + f(id, model = "besagproper", graph = W_knn_inla),
+                    data = st_drop_geometry(municipios),
+                    family = "gaussian",
+                    control.compute = list(dic = TRUE, waic = TRUE),
+                    control.predictor = list(compute = TRUE))
+
+sp_no2_knn <- inla(formula = no2_median ~ renta_log + f(id, model = "besagproper", graph = W_knn_inla),
+                   data = st_drop_geometry(municipios),
+                   family = "gaussian",
+                   control.compute = list(dic = TRUE, waic = TRUE),
+                   control.predictor = list(compute = TRUE))
+
+# Tabla comparativa de beta_1 (log-renta) bajo ambos criterios de vecindario
+tabla_sensibilidad <- data.frame(
+  Modelo = c("PM2.5", "NO2"),
+  beta_queen = c(sp_pm25_inla$summary.fixed["renta_log", "mean"],
+                 sp_no2_inla$summary.fixed["renta_log", "mean"]),
+  beta_queen_lo = c(sp_pm25_inla$summary.fixed["renta_log", "0.025quant"],
+                    sp_no2_inla$summary.fixed["renta_log", "0.025quant"]),
+  beta_queen_hi = c(sp_pm25_inla$summary.fixed["renta_log", "0.975quant"],
+                    sp_no2_inla$summary.fixed["renta_log", "0.975quant"]),
+  beta_knn = c(sp_pm25_knn$summary.fixed["renta_log", "mean"],
+               sp_no2_knn$summary.fixed["renta_log", "mean"]),
+  beta_knn_lo = c(sp_pm25_knn$summary.fixed["renta_log", "0.025quant"],
+                  sp_no2_knn$summary.fixed["renta_log", "0.025quant"]),
+  beta_knn_hi = c(sp_pm25_knn$summary.fixed["renta_log", "0.975quant"],
+                  sp_no2_knn$summary.fixed["renta_log", "0.975quant"])
+)
+print(tabla_sensibilidad)
   
-  
-  
-  
-  
-  
+# 3.4 Evaluación de excedencia a directrices de la OMS
+umbral_pm25 <- 5   # µg/m3, directriz OMS
+umbral_no2  <- 10  # µg/m3, directriz OMS
+
+prob_exceed_pm25 <- sapply(sp_pm25_inla$marginals.fitted.values, function(m) {
+  1 - inla.pmarginal(umbral_pm25, m)
+})
+municipios$prob_exceed_no2 <- sapply(sp_no2_inla$marginals.fitted.values, function(m) {
+  1 - inla.pmarginal(umbral_no2, m)
+})
+
+summary(municipios$prob_exceed_pm25)
+summary(municipios$prob_exceed_no2)
+# Municipios con probabilidad de excedencia relevante (>10%, ajustar umbral según resultado)
+municipios$name[municipios$prob_exceed_pm25 > 0.10]
+municipios$name[municipios$prob_exceed_no2  > 0.10]
